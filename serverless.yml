@@ -1,0 +1,168 @@
+# TODO: Update service name for your specific service
+service: veloflow-service-template
+
+frameworkVersion: '3'
+
+provider:
+  name: aws
+  runtime: python3.11
+  region: us-east-1
+  stage: ${opt:stage, 'dev'}
+
+  # Lambda Configuration
+  memorySize: 3008  # Adjust based on your service needs
+  timeout: 900      # 15 minutes (max Lambda timeout)
+
+  # Ephemeral Storage
+  ephemeralStorageSize: 2048  # MB for /tmp file operations
+
+  # Environment Variables
+  # TODO: Update these for your service
+  environment:
+    SERVICE_ID: service-template-v1
+    SERVICE_VERSION: 1.0.0
+    EVENT_BUS_NAME: veloflow-${self:provider.stage}-event-bus
+    LOG_LEVEL: ${env:LOG_LEVEL, 'INFO'}
+    STAGE: ${self:provider.stage}
+    # TODO: Add your service-specific environment variables
+    # ANTHROPIC_API_KEY: ${env:ANTHROPIC_API_KEY}
+
+  # IAM Permissions
+  iam:
+    role:
+      statements:
+        # S3 Read permissions for input files
+        - Effect: Allow
+          Action:
+            - s3:GetObject
+            - s3:GetObjectVersion
+          Resource:
+            - arn:aws:s3:::veloflow-${self:provider.stage}-input/*
+            - arn:aws:s3:::veloflow-${self:provider.stage}-processing/*
+
+        # S3 Write permissions for output files
+        - Effect: Allow
+          Action:
+            - s3:PutObject
+            - s3:PutObjectAcl
+          Resource:
+            - arn:aws:s3:::veloflow-${self:provider.stage}-processing/*
+            - arn:aws:s3:::veloflow-${self:provider.stage}-output/*
+
+        # EventBridge permissions for progress events
+        - Effect: Allow
+          Action:
+            - events:PutEvents
+          Resource:
+            - arn:aws:events:${self:provider.region}:*:event-bus/veloflow-${self:provider.stage}-event-bus
+
+        # CloudWatch Logs (automatically added by Serverless, but explicit for clarity)
+        - Effect: Allow
+          Action:
+            - logs:CreateLogGroup
+            - logs:CreateLogStream
+            - logs:PutLogEvents
+          Resource:
+            - arn:aws:logs:${self:provider.region}:*:log-group:/aws/lambda/${self:service}-${self:provider.stage}-*:*
+
+  # Deployment configuration
+  deploymentBucket:
+    name: veloflow-${self:provider.stage}-deployments
+    serverSideEncryption: AES256
+
+# Lambda Functions
+functions:
+  processor:
+    handler: lambda_handler.lambda_handler
+    name: ${self:service}-${self:provider.stage}-processor
+    description: VeloFlow service template for workflow integration
+
+    # TODO: Update description for your service
+    # description: Processes XYZ documents for VeloFlow workflows
+
+    # VPC Configuration (optional - uncomment if needed)
+    # vpc:
+    #   securityGroupIds:
+    #     - sg-xxxxxxxxx
+    #   subnetIds:
+    #     - subnet-xxxxxxxxx
+    #     - subnet-yyyyyyyyy
+
+    # Tags
+    tags:
+      Service: VeloFlow
+      Component: ServiceTemplate
+      ManagedBy: Serverless
+      Stage: ${self:provider.stage}
+
+# Package Configuration
+package:
+  individually: false
+  patterns:
+    - '!.git/**'
+    - '!.vscode/**'
+    - '!.idea/**'
+    - '!tests/**'
+    - '!scripts/**'
+    - '!docs/**'
+    - '!*.md'
+    - '!.pytest_cache/**'
+    - '!htmlcov/**'
+    - '!.coverage'
+    - '!.env*'
+    - '!node_modules/**'
+    - '!lambda-layer/**'
+    - '!*.zip'
+    - 'lambda_handler.py'
+    - 'service_event_emitter.py'
+    # TODO: Add any additional files or directories your service needs
+    # - 'my_module/**'
+
+# Plugins
+plugins:
+  - serverless-python-requirements
+
+# Custom Configuration
+custom:
+  pythonRequirements:
+    dockerizePip: false  # Set to true if using native dependencies
+    layer: false         # Include dependencies in deployment package
+    zip: true
+    slim: true           # Remove unnecessary files to reduce package size
+    strip: false         # Keep debugging symbols
+    useStaticCache: false
+    useDownloadCache: false
+
+# Stage-specific configurations
+# Override settings per stage using --stage flag
+# Example: serverless deploy --stage prod
+stages:
+  dev:
+    memorySize: 3008
+    timeout: 900
+
+  staging:
+    memorySize: 3008
+    timeout: 900
+
+  prod:
+    memorySize: 3008  # Adjust for production workload
+    timeout: 900
+
+# Outputs
+outputs:
+  LambdaFunctionArn:
+    Description: ARN of the Lambda function
+    Value:
+      Fn::GetAtt:
+        - ProcessorLambdaFunction
+        - Arn
+    Export:
+      Name: ${self:service}-${self:provider.stage}-lambda-arn
+
+  LambdaFunctionName:
+    Description: Name of the Lambda function
+    Value:
+      Ref: ProcessorLambdaFunction
+    Export:
+      Name: ${self:service}-${self:provider.stage}-lambda-name

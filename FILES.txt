@@ -1,0 +1,67 @@
+VeloFlow Service Template - Complete File List
+==============================================
+
+CORE IMPLEMENTATION (Ready to Customize)
+├── lambda_handler.py (10KB)
+│   └── VeloFlow-compatible handler with TODOs for service logic
+├── service_event_emitter.py (6.7KB)
+│   └── Real-time progress updates (ready to use, no changes needed)
+
+DEPLOYMENT OPTIONS (Choose One)
+├── serverless.yml (4.5KB)
+│   └── Serverless Framework - Recommended for most services
+├── template.yaml (4.5KB)
+│   └── AWS SAM - Good for CloudFormation integration
+├── deploy_lambda.sh (7.2KB)
+│   └── Plain AWS CLI - No additional tools needed
+
+CONFIGURATION FILES
+├── requirements.txt (541B)
+│   └── Python dependencies template (add your libraries)
+├── .env.sample
+│   └── Environment variables example
+├── .gitignore
+│   └── Comprehensive ignore rules
+├── package.json (1.1KB)
+│   └── NPM scripts for Serverless Framework
+├── test-event.json (360B)
+│   └── Sample VeloFlow test event
+
+DOCUMENTATION
+├── README.md (14KB)
+│   └── Complete setup guide, deployment, troubleshooting
+├── TEMPLATE_GUIDE.md (8KB)
+│   └── Step-by-step customization instructions
+├── .claude/CLAUDE.md (18KB)
+│   └── AI assistant instructions for customization
+└── FILES.txt
+    └── This file
+
+DIRECTORIES
+├── scripts/
+│   └── (Empty - for custom automation scripts)
+└── tests/
+    └── (Empty - for unit/integration tests)
+
+TOTAL: 12 files, 2 directories
+
+QUICK START
+===========
+1. Copy template: cp -r service-template service-YOUR-NAME
+2. Update service name in all configs
+3. Implement process_file() in lambda_handler.py
+4. Add dependencies to requirements.txt
+5. Deploy: npm run deploy:dev
+6. Test: aws lambda invoke --function-name YOUR-SERVICE-dev ...
+7. Register with VeloFlow
+
+KEY FEATURES
+============
+✓ Full VeloFlow event handling (including multi-stage output_key)
+✓ Real-time progress updates via EventBridge
+✓ S3 download/upload with proper error handling
+✓ CloudWatch monitoring and alarms
+✓ Multiple deployment options
+✓ Production-ready IAM permissions
+✓ Comprehensive documentation
+✓ Clear TODOs for customization

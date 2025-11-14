@@ -1,0 +1,13 @@
+{
+  "invocation_type": "direct",
+  "job_id": "test-job-123",
+  "input_bucket": "veloflow-dev-input",
+  "input_key": "test/sample-input.pdf",
+  "output_bucket": "veloflow-dev-output",
+  "output_key": "jobs/test-job-123/output.xlsx",
+  "reference_date": "2025-01-15",
+  "customer_tier": "standard",
+  "stage_config": {
+    "stage_id": "processing-stage-1"
+  }
+}

@@ -1,0 +1,150 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: VeloFlow Service Template - Lambda function for workflow integration
+
+# TODO: Update parameters for your service
+Parameters:
+  ServiceName:
+    Type: String
+    Default: service-template
+    Description: Name of the service (used in resource naming)
+
+  Environment:
+    Type: String
+    Default: dev
+    Description: Environment name (dev, staging, prod)
+    AllowedValues:
+      - dev
+      - staging
+      - prod
+
+  # TODO: Add any API keys or secrets your service needs
+  # AnthropicApiKey:
+  #   Type: String
+  #   NoEcho: true
+  #   Description: Anthropic API Key for Claude
+  #   MinLength: 1
+
+Resources:
+  # Lambda function
+  ServiceFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub '${ServiceName}-${Environment}'
+      Handler: lambda_handler.lambda_handler
+      Runtime: python3.11
+      CodeUri: .
+      MemorySize: 3008
+      Timeout: 900
+      EphemeralStorage:
+        Size: 2048
+      Environment:
+        Variables:
+          SERVICE_ID: !Sub '${ServiceName}-v1'
+          SERVICE_VERSION: '1.0.0'
+          EVENT_BUS_NAME: !Sub 'veloflow-${Environment}-event-bus'
+          # TODO: Add your service-specific environment variables
+          # ANTHROPIC_API_KEY: !Ref AnthropicApiKey
+      Policies:
+        # S3 read permissions for input files
+        - S3ReadPolicy:
+            BucketName: !Sub 'veloflow-${Environment}-input'
+        - S3ReadPolicy:
+            BucketName: !Sub 'veloflow-${Environment}-processing'
+        # S3 write permissions for output files
+        - S3WritePolicy:
+            BucketName: !Sub 'veloflow-${Environment}-processing'
+        - S3WritePolicy:
+            BucketName: !Sub 'veloflow-${Environment}-output'
+        # EventBridge permissions for real-time progress updates
+        - Statement:
+            - Effect: Allow
+              Action:
+                - events:PutEvents
+              Resource:
+                - !Sub 'arn:aws:events:${AWS::Region}:${AWS::AccountId}:event-bus/veloflow-${Environment}-event-bus'
+      Layers:
+        - !Ref DependenciesLayer
+      Tags:
+        Project: !Ref ServiceName
+        Environment: !Ref Environment
+        ManagedBy: CloudFormation
+        VeloFlowIntegration: 'true'
+
+  # Lambda layer for dependencies
+  DependenciesLayer:
+    Type: AWS::Serverless::LayerVersion
+    Properties:
+      LayerName: !Sub '${ServiceName}-dependencies-${Environment}'
+      Description: !Sub 'Dependencies for ${ServiceName}'
+      ContentUri: lambda-layer/
+      CompatibleRuntimes:
+        - python3.11
+      RetentionPolicy: Retain
+
+  # CloudWatch Log Group with retention
+  FunctionLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub '/aws/lambda/${ServiceName}-${Environment}'
+      RetentionInDays: 30
+
+  # CloudWatch Alarms
+  FunctionErrorAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub '${ServiceName}-${Environment}-errors'
+      AlarmDescription: Alert when function error rate is high
+      MetricName: Errors
+      Namespace: AWS/Lambda
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 5
+      ComparisonOperator: GreaterThanThreshold
+      Dimensions:
+        - Name: FunctionName
+          Value: !Ref ServiceFunction
+      TreatMissingData: notBreaching
+
+  FunctionDurationAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub '${ServiceName}-${Environment}-duration'
+      AlarmDescription: Alert when function duration is too long
+      MetricName: Duration
+      Namespace: AWS/Lambda
+      Statistic: Average
+      Period: 300
+      EvaluationPeriods: 2
+      Threshold: 600000  # 10 minutes
+      ComparisonOperator: GreaterThanThreshold
+      Dimensions:
+        - Name: FunctionName
+          Value: !Ref ServiceFunction
+      TreatMissingData: notBreaching
+
+Outputs:
+  FunctionArn:
+    Description: Lambda Function ARN
+    Value: !GetAtt ServiceFunction.Arn
+    Export:
+      Name: !Sub '${AWS::StackName}-FunctionArn'
+
+  FunctionName:
+    Description: Lambda Function Name
+    Value: !Ref ServiceFunction
+    Export:
+      Name: !Sub '${AWS::StackName}-FunctionName'
+
+  LayerArn:
+    Description: Lambda Layer ARN
+    Value: !Ref DependenciesLayer
+    Export:
+      Name: !Sub '${AWS::StackName}-LayerArn'
+
+  LogGroupName:
+    Description: CloudWatch Log Group Name
+    Value: !Ref FunctionLogGroup
+    Export:
+      Name: !Sub '${AWS::StackName}-LogGroupName'

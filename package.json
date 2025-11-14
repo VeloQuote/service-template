@@ -1,0 +1,31 @@
+{
+  "name": "veloflow-service-template",
+  "version": "1.0.0",
+  "description": "VeloFlow Service Template for workflow integration",
+  "scripts": {
+    "deploy:dev": "serverless deploy --stage dev",
+    "deploy:staging": "serverless deploy --stage staging",
+    "deploy:prod": "serverless deploy --stage prod",
+    "remove:dev": "serverless remove --stage dev",
+    "remove:staging": "serverless remove --stage staging",
+    "remove:prod": "serverless remove --stage prod",
+    "logs:dev": "serverless logs -f processor --stage dev --tail",
+    "logs:staging": "serverless logs -f processor --stage staging --tail",
+    "logs:prod": "serverless logs -f processor --stage prod --tail",
+    "info:dev": "serverless info --stage dev",
+    "info:staging": "serverless info --stage staging",
+    "info:prod": "serverless info --stage prod"
+  },
+  "keywords": [
+    "veloflow",
+    "lambda",
+    "aws",
+    "serverless"
+  ],
+  "author": "VeloQuote",
+  "license": "PROPRIETARY",
+  "devDependencies": {
+    "serverless": "^3.38.0",
+    "serverless-python-requirements": "^6.0.0"
+  }
+}
