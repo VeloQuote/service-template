@@ -27,7 +27,25 @@ This template includes everything you need to create a VeloFlow service:
 
 ## Quick Start
 
-### 1. Clone or Copy This Template
+### Option 1: Use CLI Tool (Recommended)
+
+The easiest way to create a new service from this template:
+
+```bash
+npx create-veloflow-service my-new-service
+```
+
+The CLI will:
+- ✅ Download the latest template
+- ✅ Prompt you for service configuration
+- ✅ Customize all files with your inputs
+- ✅ Initialize git repository
+- ✅ Install dependencies (npm + pip)
+- ✅ Set up GitHub Actions CI/CD
+
+**See the [create-veloflow-service](https://github.com/VeloQuote/create-veloflow-service) repository for full documentation.**
+
+### Option 2: Manual Setup
 
 ```bash
 # Copy the template to your new service directory
