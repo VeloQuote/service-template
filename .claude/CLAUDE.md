@@ -15,7 +15,7 @@ This template provides a production-ready foundation for VeloFlow Lambda service
 - Comprehensive error handling
 - S3 integration for input/output files
 - CloudWatch monitoring and alarms
-- **Service registry update script** (NEW)
+- **Service metadata file (veloflow.json)** (NEW)
 
 ### New CI/CD Features
 
@@ -26,7 +26,7 @@ The template now includes:
   - `promote-qa.yml`: Manual promotion from dev to QA
   - `promote-prod.yml`: Manual promotion from QA to production
 - **`requirements-dev.txt`**: Testing and development dependencies
-- **`scripts/update_service_registry.py`**: Service registry update utility
+- **`veloflow.json`**: Service metadata for VeloFlow registration
 - **`tests/test_lambda_handler.py`**: Comprehensive unit tests
 
 ---

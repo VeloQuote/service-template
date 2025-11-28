@@ -106,15 +106,15 @@ cat response.json
 ### 6. Register with VeloFlow
 
 ```bash
+# Update veloflow.json with your service details
+vim veloflow.json
+
 # Use VeloFlow's registration script
 cd ~/git/VeloFlow
-python3 scripts/register_service.py \
-  --service-id "my-service-v1" \
-  --service-name "My Service" \
-  --service-type "custom" \
-  --lambda-name "my-service-dev" \
-  --stage dev
+python3 scripts/services/register_service.py ~/path/to/my-service --stage dev
 ```
+
+The registration script reads your `veloflow.json` metadata file and registers your service in VeloFlow's service registry.
 
 ---
 
@@ -235,11 +235,14 @@ service-template/
 │   ├── promote-qa.yml             # Manual promote to QA
 │   └── promote-prod.yml           # Manual promote to production
 │
-├── scripts/                       # Utility scripts (NEW)
-│   └── update_service_registry.py # Update DynamoDB service registry
+├── scripts/                       # Utility scripts
+│   └── README.md                  # Scripts documentation
 │
 ├── tests/                         # Unit tests (NEW)
 │   └── test_lambda_handler.py     # Lambda handler tests
+│
+├── veloflow.json                  # Service metadata (NEW)
+│                                  # Declares capabilities, parameters, constraints
 │
 ├── Deployment Options (Choose one):
 ├── serverless.yml                 # Serverless Framework config

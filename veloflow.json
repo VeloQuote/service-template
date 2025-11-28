@@ -1,0 +1,69 @@
+{
+  "$schema": "https://raw.githubusercontent.com/VeloQuote/VeloFlow/master/schemas/service-metadata.json",
+  "version": "1.0.0",
+  "service": {
+    "name": "service-template",
+    "display_name": "VeloFlow Service Template",
+    "description": "Template for creating new VeloFlow Lambda services",
+    "type": "template",
+    "version": "1.0.0"
+  },
+  "lambda": {
+    "handler": "lambda_handler.lambda_handler",
+    "runtime": "python3.11",
+    "memory_mb": 3008,
+    "timeout_seconds": 900,
+    "ephemeral_storage_mb": 2048
+  },
+  "capabilities": {
+    "description": "Template service for creating new VeloFlow services",
+    "supported_input_formats": ["any"],
+    "supported_output_formats": ["any"],
+    "max_file_size_mb": 50,
+    "features": {
+      "batch_processing": false,
+      "streaming": false,
+      "ai_powered": false,
+      "validation": false
+    }
+  },
+  "constraints": {
+    "max_concurrency": 10,
+    "rate_limit_per_minute": 60,
+    "priority": 10
+  },
+  "parameters": [
+    {
+      "name": "example_parameter",
+      "type": "string",
+      "required": false,
+      "description": "Example parameter (replace with your actual parameters)",
+      "placeholder": "example-value",
+      "default": null
+    }
+  ],
+  "deployment": {
+    "framework": "serverless",
+    "stages": ["dev", "qa", "prod"],
+    "naming_pattern": "veloflow-{stage}-{service-name}"
+  },
+  "dependencies": {
+    "external_apis": [],
+    "aws_services": ["s3", "lambda", "eventbridge", "cloudwatch"]
+  },
+  "documentation": {
+    "readme": "README.md",
+    "api_docs": null,
+    "examples": "test-event.json"
+  },
+  "metadata": {
+    "created": "2024-01-01T00:00:00Z",
+    "updated": "2024-01-01T00:00:00Z",
+    "maintainers": ["VeloQuote Team"],
+    "tags": ["template", "veloflow", "lambda"],
+    "use_cases": [
+      "Service template customization",
+      "VeloFlow integration examples"
+    ]
+  }
+}

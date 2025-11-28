@@ -407,13 +407,15 @@ aws logs tail /aws/lambda/veloflow-qa-{service-name} --follow
 aws logs tail /aws/lambda/veloflow-prod-{service-name} --follow
 ```
 
-### Check Service Registry (if using)
+### Verify Service Registration
 
 ```bash
-# Verify service registration
-python scripts/update_service_registry.py --stage dev --verify-only
-python scripts/update_service_registry.py --stage qa --verify-only
-python scripts/update_service_registry.py --stage prod --verify-only
+# Register service with VeloFlow (after deployment)
+cd ~/git/VeloFlow
+python3 scripts/services/register_service.py ~/path/to/your-service --stage dev
+
+# Verify registration
+python3 scripts/services/verify_service.py your-service-name --stage dev
 ```
 
 ## 🐛 Troubleshooting
