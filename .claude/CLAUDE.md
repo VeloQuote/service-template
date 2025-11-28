@@ -9,10 +9,25 @@ This is a **template repository** for creating VeloFlow-compatible Lambda servic
 This template provides a production-ready foundation for VeloFlow Lambda services with:
 - Complete VeloFlow event handling
 - Real-time progress updates via EventBridge
+- **GitHub Actions CI/CD with trunk-based development** (NEW)
+- **Comprehensive testing infrastructure** (pytest, coverage, linting, security scans) (NEW)
 - Multiple deployment options (Serverless Framework, AWS SAM, plain AWS CLI)
 - Comprehensive error handling
 - S3 integration for input/output files
 - CloudWatch monitoring and alarms
+- **Service registry update script** (NEW)
+
+### New CI/CD Features
+
+The template now includes:
+- **`.github/workflows/`**: Complete GitHub Actions workflows for CI/CD
+  - `pr-validation.yml`: Automatic testing and validation on pull requests
+  - `ci-deploy-dev.yml`: Automatic build and deploy to dev on merge to main
+  - `promote-qa.yml`: Manual promotion from dev to QA
+  - `promote-prod.yml`: Manual promotion from QA to production
+- **`requirements-dev.txt`**: Testing and development dependencies
+- **`scripts/update_service_registry.py`**: Service registry update utility
+- **`tests/test_lambda_handler.py`**: Comprehensive unit tests
 
 ---
 

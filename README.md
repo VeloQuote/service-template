@@ -17,6 +17,8 @@ This template includes everything you need to create a VeloFlow service:
 - ✅ **VeloFlow Integration**: Full compatibility with VeloFlow event format and response contract
 - ✅ **Real-time Progress**: EventBridge integration for live progress updates
 - ✅ **Multi-stage Support**: Proper handling of `output_key` for complex workflows
+- ✅ **GitHub Actions CI/CD**: Trunk-based development with automated testing and deployments (NEW)
+- ✅ **Comprehensive Testing**: Unit tests, code quality checks, and security scanning (NEW)
 - ✅ **Multiple Deployment Options**: AWS SAM, Serverless Framework, or plain AWS CLI
 - ✅ **Production Ready**: Error handling, logging, monitoring, and CloudWatch alarms
 - ✅ **Well Documented**: Clear TODOs and examples throughout
@@ -116,24 +118,136 @@ python3 scripts/register_service.py \
 
 ---
 
+## GitHub Actions CI/CD
+
+This template includes a complete trunk-based development workflow with GitHub Actions:
+
+### Workflow Overview
+
+- **PR Validation** (`pr-validation.yml`): Automatic testing, linting, and security scans on pull requests
+- **CI Deploy Dev** (`ci-deploy-dev.yml`): Automatic build and deploy to dev on merge to main
+- **Promote to QA** (`promote-qa.yml`): Manual promotion of tested artifacts from dev to QA
+- **Promote to Prod** (`promote-prod.yml`): Manual promotion with approval from QA to production
+
+### Key Features
+
+- ✅ **Build Once, Deploy Many**: Artifacts are built once and promoted across environments
+- ✅ **Git Tag Versioning**: Each deployment creates tags (`build-*`, `qa-*`, `prod-*`)
+- ✅ **Automated Testing**: Unit tests, coverage checks, linting, and security scans
+- ✅ **Smoke Tests**: Automatic validation after each deployment
+- ✅ **Rollback Support**: Easy rollback to previous versions
+- ✅ **Release Management**: Automatic GitHub releases for production deployments
+
+### Setup Instructions
+
+1. **Configure GitHub Secrets** (Settings → Secrets and variables → Actions):
+   ```
+   AWS_ACCESS_KEY_ID - Your AWS access key
+   AWS_SECRET_ACCESS_KEY - Your AWS secret key
+   ```
+
+2. **Configure GitHub Environments** (Settings → Environments):
+   - Create `qa` environment (optional approval)
+   - Create `production` environment (required reviewers recommended)
+
+3. **Enable Branch Protection** (Settings → Branches):
+   - Require PR approval
+   - Require status checks: `validate / Validate PR`
+   - Require branches to be up to date
+
+### Usage
+
+**Deploy a feature:**
+```bash
+# Create PR, get approval, merge to main
+# CI automatically deploys to dev
+```
+
+**Promote to QA:**
+```bash
+VERSION=$(git ls-remote --tags origin | grep "build-" | tail -n 1 | sed 's/.*build-//')
+gh workflow run promote-qa.yml -f artifact_version=$VERSION
+```
+
+**Promote to Production:**
+```bash
+VERSION=$(git ls-remote --tags origin | grep "qa-" | tail -n 1 | sed 's/.*qa-//')
+gh workflow run promote-prod.yml -f artifact_version=$VERSION
+```
+
+See [`.github/workflows/README.md`](.github/workflows/README.md) for detailed documentation.
+
+---
+
+## Testing
+
+### Running Tests Locally
+
+```bash
+# Install development dependencies
+pip install -r requirements-dev.txt
+
+# Run tests with coverage
+pytest tests/ --cov --cov-report=term-missing -v
+
+# Check code formatting
+black --check .
+
+# Check linting
+flake8 .
+
+# Check import sorting
+isort --check-only --profile black .
+
+# Run security scans
+bandit -r .
+safety check
+```
+
+### Test Structure
+
+- **`tests/test_lambda_handler.py`**: Comprehensive unit tests for the Lambda handler
+  - Event validation tests
+  - Output key handling tests
+  - Error handling tests
+  - Success flow tests
+
+Add your service-specific tests to this file or create new test modules in the `tests/` directory.
+
+---
+
 ## Project Structure
 
 ```
 service-template/
-├── lambda_handler.py           # Main Lambda handler (TODO: Customize)
-├── service_event_emitter.py    # EventBridge integration (Ready to use)
-├── requirements.txt            # Python dependencies (TODO: Add yours)
-├── .env.sample                 # Environment variables template
-├── .gitignore                  # Git ignore rules
-├── test-event.json            # Sample VeloFlow test event
+├── lambda_handler.py              # Main Lambda handler (TODO: Customize)
+├── service_event_emitter.py       # EventBridge integration (Ready to use)
+├── requirements.txt               # Python dependencies (TODO: Add yours)
+├── requirements-dev.txt           # Development/testing dependencies (NEW)
+├── .env.sample                    # Environment variables template
+├── .gitignore                     # Git ignore rules
+├── test-event.json                # Sample VeloFlow test event
+│
+├── .github/workflows/             # GitHub Actions CI/CD (NEW)
+│   ├── README.md                  # Detailed workflow documentation
+│   ├── pr-validation.yml          # PR testing and validation
+│   ├── ci-deploy-dev.yml          # Auto deploy to dev
+│   ├── promote-qa.yml             # Manual promote to QA
+│   └── promote-prod.yml           # Manual promote to production
+│
+├── scripts/                       # Utility scripts (NEW)
+│   └── update_service_registry.py # Update DynamoDB service registry
+│
+├── tests/                         # Unit tests (NEW)
+│   └── test_lambda_handler.py     # Lambda handler tests
 │
 ├── Deployment Options (Choose one):
-├── serverless.yml             # Serverless Framework config
-├── template.yaml              # AWS SAM template
-└── deploy_lambda.sh           # Plain AWS CLI deployment script
+├── serverless.yml                 # Serverless Framework config
+├── template.yaml                  # AWS SAM template
+└── deploy_lambda.sh               # Plain AWS CLI deployment script
 │
-├── package.json               # NPM scripts for Serverless
-└── README.md                  # This file
+├── package.json                   # NPM scripts for Serverless
+└── README.md                      # This file
 ```
 
 ---

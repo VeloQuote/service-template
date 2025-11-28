@@ -1,0 +1,21 @@
+# Development and Testing Dependencies for VeloFlow Services
+
+# Testing Framework
+pytest>=8.0.0
+pytest-cov>=4.1.0          # Code coverage
+pytest-mock>=3.12.0        # Mocking utilities
+
+# Code Quality
+black>=24.0.0              # Code formatting
+flake8>=7.0.0              # Code linting
+isort>=5.13.0              # Import sorting
+
+# Security Scanning
+bandit>=1.7.5              # Security issues scanner
+safety>=3.0.0              # Dependency vulnerability scanner
+
+# AWS Testing
+moto>=5.0.0                # Mock AWS services for testing
+
+# Type Checking (optional but recommended)
+mypy>=1.8.0                # Static type checking

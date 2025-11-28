@@ -1,0 +1,190 @@
+name: CI - Build and Deploy to Dev
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  build-and-deploy:
+    name: Build and Deploy to Dev
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Generate version
+        id: version
+        run: |
+          VERSION="$(git rev-parse --short=8 HEAD)-$(date +%Y%m%d-%H%M%S)"
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+
+          # Extract service name from serverless.yml
+          SERVICE_NAME=$(grep "^service:" serverless.yml | awk '{print $2}' | sed 's/veloflow-//')
+          echo "service_name=$SERVICE_NAME" >> $GITHUB_OUTPUT
+          echo "artifact_name=service-$SERVICE_NAME-$VERSION" >> $GITHUB_OUTPUT
+          echo "📦 Version: $VERSION"
+          echo "📦 Service: $SERVICE_NAME"
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: |
+          pip install -r requirements.txt
+          pip install -r requirements-dev.txt
+
+      - name: Run tests
+        run: |
+          pytest tests/ --cov --cov-report=term-missing -v
+
+      - name: Setup Node.js for Serverless
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install Serverless Framework
+        run: npm install
+
+      - name: Package service
+        run: |
+          npx serverless package --stage dev --verbose
+          echo "✅ Service packaged"
+          ls -la .serverless/
+
+      - name: Create artifact for promotion
+        run: |
+          # Artifact contains source code only (not .serverless/ which is stage-specific)
+          tar -czf ${{ steps.version.outputs.artifact_name }}.tar.gz \
+            serverless.yml \
+            requirements.txt \
+            lambda_handler.py \
+            service_event_emitter.py
+
+          ls -lh ${{ steps.version.outputs.artifact_name }}.tar.gz
+          echo "✅ Artifact created: ${{ steps.version.outputs.artifact_name }}.tar.gz"
+          echo ""
+          echo "⚠️  IMPORTANT: If your service has additional files (src/, templates/, etc.),"
+          echo "    update the tar command above to include them in the artifact!"
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: us-east-1
+
+      - name: Verify .serverless directory before deploy
+        run: |
+          echo "📂 Checking .serverless directory before deploy..."
+          pwd
+          ls -la
+          if [ -d ".serverless" ]; then
+            echo "✅ .serverless directory exists"
+            ls -la .serverless/
+          else
+            echo "❌ .serverless directory NOT found!"
+            echo "Contents of working directory:"
+            find . -maxdepth 2 -type d
+            exit 1
+          fi
+
+      - name: Deploy to Dev
+        run: |
+          echo "🚀 Starting deployment..."
+          echo "Working directory: $(pwd)"
+          echo "Checking .serverless before deploy:"
+          ls -la .serverless/ || echo "Cannot list .serverless"
+          echo ""
+          echo "Attempting deploy..."
+          npx serverless deploy --stage dev --package .serverless --verbose
+          echo "✅ Deployed to Dev"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.version.outputs.artifact_name }}
+          path: ${{ steps.version.outputs.artifact_name }}.tar.gz
+          retention-days: 90
+
+      - name: Get Lambda function info
+        id: lambda_info
+        run: |
+          FUNCTION_NAME="veloflow-dev-${{ steps.version.outputs.service_name }}"
+          FUNCTION_ARN=$(aws lambda get-function --function-name $FUNCTION_NAME --query 'Configuration.FunctionArn' --output text 2>/dev/null || echo "not-found")
+          echo "function_name=$FUNCTION_NAME" >> $GITHUB_OUTPUT
+          echo "function_arn=$FUNCTION_ARN" >> $GITHUB_OUTPUT
+          echo "📋 Function: $FUNCTION_NAME"
+          if [ "$FUNCTION_ARN" != "not-found" ]; then
+            echo "📋 ARN: $FUNCTION_ARN"
+          else
+            echo "⚠️  Could not retrieve function ARN"
+          fi
+
+      - name: Run smoke test
+        id: smoke_test
+        run: |
+          echo "🧪 Running smoke test..."
+
+          # Check if test-event.json exists
+          if [ ! -f "test-event.json" ]; then
+            echo "⚠️  test-event.json not found - skipping smoke test"
+            echo "   Create test-event.json to enable smoke testing"
+            exit 0
+          fi
+
+          # Invoke Lambda with test event
+          aws lambda invoke \
+            --function-name veloflow-dev-${{ steps.version.outputs.service_name }} \
+            --payload file://test-event.json \
+            --cli-binary-format raw-in-base64-out \
+            response.json
+
+          # Display response
+          echo "📄 Lambda Response:"
+          cat response.json | jq '.'
+
+          # Check for errors
+          if grep -q '"status": "error"' response.json; then
+            echo "❌ Smoke test FAILED - Lambda returned error status"
+            exit 1
+          fi
+
+          if grep -q '"FunctionError"' response.json; then
+            echo "❌ Smoke test FAILED - Lambda execution error"
+            exit 1
+          fi
+
+          echo "✅ Smoke test PASSED"
+
+      - name: Create build tag
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git tag "build-${{ steps.version.outputs.version }}"
+          git push origin "build-${{ steps.version.outputs.version }}"
+          echo "✅ Created tag: build-${{ steps.version.outputs.version }}"
+
+      - name: Deployment summary
+        if: always()
+        run: |
+          echo "## 🚀 Deployment Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Environment:** Dev" >> $GITHUB_STEP_SUMMARY
+          echo "**Service:** ${{ steps.version.outputs.service_name }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Version:** ${{ steps.version.outputs.version }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Artifact:** ${{ steps.version.outputs.artifact_name }}.tar.gz" >> $GITHUB_STEP_SUMMARY
+          echo "**Function:** ${{ steps.lambda_info.outputs.function_name }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Build Tag:** build-${{ steps.version.outputs.version }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Status:** ${{ job.status }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Next Steps" >> $GITHUB_STEP_SUMMARY
+          echo "To promote to QA, run:" >> $GITHUB_STEP_SUMMARY
+          echo '```bash' >> $GITHUB_STEP_SUMMARY
+          echo "gh workflow run promote-qa.yml -f artifact_version=${{ steps.version.outputs.version }}" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY

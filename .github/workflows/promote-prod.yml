@@ -1,0 +1,314 @@
+name: Promote to Production
+
+on:
+  workflow_dispatch:
+    inputs:
+      artifact_version:
+        description: 'Artifact version to deploy (must be QA-tested)'
+        required: true
+        type: string
+      deployment_notes:
+        description: 'Deployment notes for release'
+        required: false
+        type: string
+      skip_tests:
+        description: 'Skip smoke tests (emergency rollback only)'
+        required: false
+        type: boolean
+        default: false
+
+jobs:
+  promote:
+    name: Deploy to Production
+    runs-on: ubuntu-latest
+    environment: production
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Validate QA tag exists
+        run: |
+          echo "🔍 Verifying artifact was deployed to QA first..."
+
+          if ! git ls-remote --tags origin | grep -q "qa-${{ inputs.artifact_version }}"; then
+            echo "❌ Error: Artifact '${{ inputs.artifact_version }}' was NOT deployed to QA"
+            echo ""
+            echo "⚠️  You must deploy to QA first using promote-qa.yml"
+            echo ""
+            echo "Available QA tags:"
+            git ls-remote --tags origin | grep "qa-" | tail -n 10
+            exit 1
+          fi
+
+          echo "✅ QA tag found - artifact was tested in QA"
+
+      - name: Check if already deployed to production
+        run: |
+          if git ls-remote --tags origin | grep -q "prod-${{ inputs.artifact_version }}"; then
+            echo "⚠️  Warning: This artifact is already deployed to production"
+            echo "Tag 'prod-${{ inputs.artifact_version }}' exists"
+            echo ""
+            echo "This may be a rollback or re-deployment."
+          fi
+
+      - name: Extract service name
+        id: service
+        run: |
+          SERVICE_NAME=$(grep "^service:" serverless.yml | awk '{print $2}' | sed 's/veloflow-//')
+          echo "service_name=$SERVICE_NAME" >> $GITHUB_OUTPUT
+          echo "📋 Service: $SERVICE_NAME"
+
+      - name: Get artifact run ID
+        id: get_run
+        run: |
+          # Extract git SHA from version
+          GIT_SHA=$(echo ${{ inputs.artifact_version }} | cut -d'-' -f1)
+
+          # Get the workflow run that created this build tag
+          RUN_ID=$(gh run list \
+            --workflow=ci-deploy-dev.yml \
+            --limit 50 \
+            --json databaseId,headSha \
+            --jq ".[] | select(.headSha | startswith(\"$GIT_SHA\")) | .databaseId" \
+            | head -n 1)
+
+          if [ -z "$RUN_ID" ]; then
+            echo "❌ Error: Could not find workflow run for artifact version ${{ inputs.artifact_version }}"
+            exit 1
+          fi
+
+          echo "run_id=$RUN_ID" >> $GITHUB_OUTPUT
+          echo "📋 Found workflow run: $RUN_ID"
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Download artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: service-${{ steps.service.outputs.service_name }}-${{ inputs.artifact_version }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          run-id: ${{ steps.get_run.outputs.run_id }}
+
+      - name: Extract artifact
+        run: |
+          tar -xzf service-${{ steps.service.outputs.service_name }}-${{ inputs.artifact_version }}.tar.gz
+          echo "✅ Artifact extracted"
+          ls -la
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install Python dependencies
+        run: |
+          pip install -r requirements.txt
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install Serverless Framework
+        run: npm install
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: us-east-1
+
+      - name: Pre-deployment backup
+        id: backup
+        run: |
+          echo "💾 Creating backup of current production function..."
+
+          # Get current function configuration
+          CURRENT_VERSION=$(aws lambda get-function \
+            --function-name veloflow-prod-${{ steps.service.outputs.service_name }} \
+            --query 'Configuration.Version' \
+            --output text 2>/dev/null || echo "none")
+
+          echo "current_version=$CURRENT_VERSION" >> $GITHUB_OUTPUT
+          echo "📋 Current production version: $CURRENT_VERSION"
+
+          # Publish version for rollback capability
+          if [ "$CURRENT_VERSION" != "none" ]; then
+            BACKUP_VERSION=$(aws lambda publish-version \
+              --function-name veloflow-prod-${{ steps.service.outputs.service_name }} \
+              --description "Backup before deploying ${{ inputs.artifact_version }}" \
+              --query 'Version' \
+              --output text)
+
+            echo "backup_version=$BACKUP_VERSION" >> $GITHUB_OUTPUT
+            echo "✅ Backup version created: $BACKUP_VERSION"
+          fi
+
+      - name: Package for Production
+        run: |
+          echo "📦 Packaging for Production stage..."
+          npx serverless package --stage prod --verbose
+          echo "✅ Packaged for Production"
+          ls -la .serverless/
+
+      - name: Deploy to Production
+        run: |
+          echo "🚀 Deploying to Production..."
+          echo ""
+          echo "⚠️  PRODUCTION DEPLOYMENT"
+          echo "Version: ${{ inputs.artifact_version }}"
+          echo ""
+
+          npx serverless deploy --stage prod --package .serverless --verbose
+
+          echo ""
+          echo "✅ Deployed to Production"
+
+      - name: Run smoke tests
+        if: ${{ !inputs.skip_tests }}
+        run: |
+          echo "🧪 Running production smoke test..."
+
+          # Check if test-event.json exists
+          if [ ! -f "test-event.json" ]; then
+            echo "⚠️  test-event.json not found - skipping smoke test"
+            echo "   Create test-event.json to enable smoke testing"
+            exit 0
+          fi
+
+          # Update test-event.json to use prod buckets
+          jq '.input_bucket = "veloflow-prod-output" | .output_bucket = "veloflow-prod-output"' test-event.json > test-event-prod.json 2>/dev/null || cp test-event.json test-event-prod.json
+
+          # Invoke Lambda with test event
+          aws lambda invoke \
+            --function-name veloflow-prod-${{ steps.service.outputs.service_name }} \
+            --payload file://test-event-prod.json \
+            --cli-binary-format raw-in-base64-out \
+            response.json
+
+          # Display response
+          echo "📄 Lambda Response:"
+          cat response.json | jq '.'
+
+          # Check for errors
+          if grep -q '"status": "error"' response.json; then
+            echo "❌ Smoke test FAILED - Lambda returned error status"
+            echo ""
+            echo "⚠️  PRODUCTION DEPLOYMENT FAILED SMOKE TEST"
+            echo "Consider immediate rollback!"
+            exit 1
+          fi
+
+          if grep -q '"FunctionError"' response.json; then
+            echo "❌ Smoke test FAILED - Lambda execution error"
+            echo ""
+            echo "⚠️  PRODUCTION DEPLOYMENT FAILED SMOKE TEST"
+            echo "Consider immediate rollback!"
+            exit 1
+          fi
+
+          echo "✅ Smoke test PASSED"
+
+      - name: Create production tag
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          # Create production tag
+          git tag "prod-${{ inputs.artifact_version }}" \
+            -a -m "Production deployment: ${{ inputs.artifact_version }}" \
+            -m "${{ inputs.deployment_notes }}"
+
+          git push origin "prod-${{ inputs.artifact_version }}"
+          echo "✅ Created tag: prod-${{ inputs.artifact_version }}"
+
+      - name: Create GitHub Release
+        uses: actions/create-release@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: prod-${{ inputs.artifact_version }}
+          release_name: Release ${{ inputs.artifact_version }}
+          body: |
+            # Production Deployment
+
+            **Version:** ${{ inputs.artifact_version }}
+            **Environment:** Production
+            **Service:** ${{ steps.service.outputs.service_name }}
+            **Function:** veloflow-prod-${{ steps.service.outputs.service_name }}
+
+            ## Deployment Notes
+
+            ${{ inputs.deployment_notes }}
+
+            ## Deployment Timeline
+
+            - **Built:** build-${{ inputs.artifact_version }}
+            - **QA Tested:** qa-${{ inputs.artifact_version }}
+            - **Production:** prod-${{ inputs.artifact_version }}
+
+            ## Rollback
+
+            To rollback, find the previous production tag and redeploy:
+
+            ```bash
+            # List recent production deployments
+            git tag -l "prod-*" | tail -n 5
+
+            # Rollback to previous version
+            gh workflow run promote-prod.yml \
+              -f artifact_version=<PREVIOUS_VERSION> \
+              -f skip_tests=true \
+              -f deployment_notes="Rollback from ${{ inputs.artifact_version }}"
+            ```
+
+            ---
+            Generated with [Claude Code](https://claude.com/claude-code)
+          draft: false
+          prerelease: false
+
+      - name: Deployment summary
+        if: always()
+        run: |
+          echo "## 🎉 Production Deployment Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Environment:** Production" >> $GITHUB_STEP_SUMMARY
+          echo "**Service:** ${{ steps.service.outputs.service_name }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Version:** ${{ inputs.artifact_version }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Artifact:** service-${{ steps.service.outputs.service_name }}-${{ inputs.artifact_version }}.tar.gz" >> $GITHUB_STEP_SUMMARY
+          echo "**Function:** veloflow-prod-${{ steps.service.outputs.service_name }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Production Tag:** prod-${{ inputs.artifact_version }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Backup Version:** ${{ steps.backup.outputs.backup_version }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Status:** ${{ job.status }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          if [ "${{ job.status }}" == "success" ]; then
+            echo "### ✅ Deployment Successful" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "Production is now running version ${{ inputs.artifact_version }}" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "### ❌ Deployment Failed" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "**Rollback immediately if production is impacted!**" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "Use backup version: ${{ steps.backup.outputs.backup_version }}" >> $GITHUB_STEP_SUMMARY
+          fi
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Deployment Notes" >> $GITHUB_STEP_SUMMARY
+          echo "${{ inputs.deployment_notes }}" >> $GITHUB_STEP_SUMMARY
+
+      - name: Notify on failure
+        if: failure()
+        run: |
+          echo "❌ PRODUCTION DEPLOYMENT FAILED"
+          echo ""
+          echo "Backup version: ${{ steps.backup.outputs.backup_version }}"
+          echo ""
+          echo "To rollback, run:"
+          echo "gh workflow run promote-prod.yml -f artifact_version=<PREVIOUS_VERSION> -f skip_tests=true"

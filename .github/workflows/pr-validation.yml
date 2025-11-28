@@ -1,0 +1,88 @@
+name: PR Validation
+
+on:
+  pull_request:
+    branches: [main]
+
+jobs:
+  validate:
+    name: Validate PR
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: |
+          pip install -r requirements.txt
+          pip install -r requirements-dev.txt
+
+      - name: Run unit tests
+        run: |
+          pytest tests/ \
+            --cov=lambda_handler \
+            --cov-report=term-missing \
+            --cov-report=xml \
+            --cov-fail-under=40 \
+            -v
+
+      - name: Upload coverage reports
+        uses: codecov/codecov-action@v4
+        if: always()
+        with:
+          files: ./coverage.xml
+          fail_ci_if_error: false
+
+      - name: Code formatting check
+        run: |
+          black --check .
+
+      - name: Code quality check
+        run: |
+          flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics
+          flake8 . --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics
+
+      - name: Import sorting check
+        run: |
+          isort --check-only --profile black .
+
+      - name: Security scan - Bandit
+        run: |
+          bandit -r . -ll -f json -o bandit-report.json || true
+          bandit -r . -ll
+
+      - name: Security scan - Safety
+        run: |
+          safety check --json || true
+          safety check
+
+      - name: Validate serverless config
+        run: |
+          npm install
+          npx serverless print --stage dev > /dev/null
+
+      - name: Check for secrets in code
+        run: |
+          # Simple regex check for common secret patterns
+          if grep -r -E "(password|secret|api[_-]?key|token)\s*=\s*['\"][^'\"]+['\"]" --include="*.py" --include="*.yml" --include="*.yaml" .; then
+            echo "⚠️  Warning: Potential secrets found in code"
+            exit 1
+          fi
+
+      - name: Validation summary
+        if: always()
+        run: |
+          echo "✅ PR Validation Complete"
+          echo ""
+          echo "Tests: ${{ job.status }}"
+          echo "Coverage threshold: 40%"
+          echo "Code quality: Checked"
+          echo "Security: Scanned"
+          echo "Configuration: Validated"
