@@ -73,6 +73,18 @@ jobs:
           echo "⚠️  IMPORTANT: If your service has additional files (src/, templates/, etc.),"
           echo "    update the tar command above to include them in the artifact!"
 
+      - name: Check if template repository
+        run: |
+          if [ "${{ github.repository }}" == "VeloQuote/service-template" ]; then
+            echo "⚠️  This is the template repository - skipping deployment"
+            echo ""
+            echo "✅ Tests and packaging completed successfully"
+            echo ""
+            echo "ℹ️  Note: Workflows will deploy normally in services created from this template"
+            exit 0
+          fi
+          echo "✅ This is a service repository - proceeding with deployment"
+
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
