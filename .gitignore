@@ -57,7 +57,7 @@ samconfig.toml
 .serverless/
 .serverless_plugins/
 node_modules/
-package-lock.json
+# package-lock.json - Required for GitHub Actions dependency caching
 
 # Lambda deployment artifacts
 lambda-layer/

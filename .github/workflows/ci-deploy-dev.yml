@@ -20,8 +20,10 @@ jobs:
           echo "version=$VERSION" >> $GITHUB_OUTPUT
 
           # Extract service name from serverless.yml
-          SERVICE_NAME=$(grep "^service:" serverless.yml | awk '{print $2}' | sed 's/veloflow-//')
+          FULL_SERVICE=$(grep "^service:" serverless.yml | awk '{print $2}')
+          SERVICE_NAME=$(echo $FULL_SERVICE | sed 's/veloflow-//')
           echo "service_name=$SERVICE_NAME" >> $GITHUB_OUTPUT
+          echo "full_service=$FULL_SERVICE" >> $GITHUB_OUTPUT
           echo "artifact_name=service-$SERVICE_NAME-$VERSION" >> $GITHUB_OUTPUT
           echo "📦 Version: $VERSION"
           echo "📦 Service: $SERVICE_NAME"
@@ -71,6 +73,18 @@ jobs:
           echo "⚠️  IMPORTANT: If your service has additional files (src/, templates/, etc.),"
           echo "    update the tar command above to include them in the artifact!"
 
+      - name: Check if template repository
+        run: |
+          if [ "${{ github.repository }}" == "VeloQuote/service-template" ]; then
+            echo "⚠️  This is the template repository - skipping deployment"
+            echo ""
+            echo "✅ Tests and packaging completed successfully"
+            echo ""
+            echo "ℹ️  Note: Workflows will deploy normally in services created from this template"
+            exit 0
+          fi
+          echo "✅ This is a service repository - proceeding with deployment"
+
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
@@ -114,7 +128,7 @@ jobs:
       - name: Get Lambda function info
         id: lambda_info
         run: |
-          FUNCTION_NAME="veloflow-dev-${{ steps.version.outputs.service_name }}"
+          FUNCTION_NAME="${{ steps.version.outputs.full_service }}-dev-processor"
           FUNCTION_ARN=$(aws lambda get-function --function-name $FUNCTION_NAME --query 'Configuration.FunctionArn' --output text 2>/dev/null || echo "not-found")
           echo "function_name=$FUNCTION_NAME" >> $GITHUB_OUTPUT
           echo "function_arn=$FUNCTION_ARN" >> $GITHUB_OUTPUT
@@ -137,9 +151,24 @@ jobs:
             exit 0
           fi
 
+          # Extract bucket and key from test-event.json
+          INPUT_BUCKET=$(jq -r '.input_bucket // empty' test-event.json)
+          INPUT_KEY=$(jq -r '.input_key // empty' test-event.json)
+
+          # Check if test file exists in S3 before invoking
+          if [ -n "$INPUT_BUCKET" ] && [ -n "$INPUT_KEY" ]; then
+            if ! aws s3 ls "s3://$INPUT_BUCKET/$INPUT_KEY" >/dev/null 2>&1; then
+              echo "⚠️  Test file not found in S3: s3://$INPUT_BUCKET/$INPUT_KEY"
+              echo "   Upload a test file to enable smoke testing:"
+              echo "   aws s3 cp your-test-file.ext s3://$INPUT_BUCKET/$INPUT_KEY"
+              exit 0
+            fi
+            echo "✅ Test file found in S3: s3://$INPUT_BUCKET/$INPUT_KEY"
+          fi
+
           # Invoke Lambda with test event
           aws lambda invoke \
-            --function-name veloflow-dev-${{ steps.version.outputs.service_name }} \
+            --function-name ${{ steps.version.outputs.full_service }}-dev-processor \
             --payload file://test-event.json \
             --cli-binary-format raw-in-base64-out \
             response.json

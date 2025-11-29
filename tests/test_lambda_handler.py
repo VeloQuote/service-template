@@ -6,19 +6,17 @@ This is a template test file. Customize it for your specific service:
 - Add tests for custom configuration handling
 """
 
-import json
 import os
 import sys
-from pathlib import Path
-from unittest.mock import MagicMock, Mock, call, patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
 # Add parent directory to path for imports
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-import lambda_handler
-from lambda_handler import lambda_handler as handler
+import lambda_handler  # noqa: E402
+from lambda_handler import lambda_handler as handler  # noqa: E402
 
 
 def create_mock_path(path_str):
@@ -518,7 +516,7 @@ class TestServiceEventEmitter:
         with patch("lambda_handler.Path", side_effect=path_constructor_mock), patch(
             "lambda_handler.TMP_DIR", create_mock_path("/tmp")  # nosec B108
         ):
-            result = handler(event, None)
+            handler(event, None)
 
         # Verify emitter was initialized correctly
         mock_emitter.assert_called_once_with(

@@ -37,8 +37,10 @@ jobs:
       - name: Extract service name
         id: service
         run: |
-          SERVICE_NAME=$(grep "^service:" serverless.yml | awk '{print $2}' | sed 's/veloflow-//')
+          FULL_SERVICE=$(grep "^service:" serverless.yml | awk '{print $2}')
+          SERVICE_NAME=$(echo $FULL_SERVICE | sed 's/veloflow-//')
           echo "service_name=$SERVICE_NAME" >> $GITHUB_OUTPUT
+          echo "full_service=$FULL_SERVICE" >> $GITHUB_OUTPUT
           echo "📋 Service: $SERVICE_NAME"
 
       - name: Get artifact run ID
@@ -97,6 +99,16 @@ jobs:
       - name: Install Serverless Framework
         run: npm install
 
+      - name: Check if template repository
+        run: |
+          if [ "${{ github.repository }}" == "VeloQuote/service-template" ]; then
+            echo "⚠️  This is the template repository - skipping QA promotion"
+            echo ""
+            echo "ℹ️  Note: Workflows will promote normally in services created from this template"
+            exit 0
+          fi
+          echo "✅ This is a service repository - proceeding with QA promotion"
+
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
@@ -133,9 +145,24 @@ jobs:
           echo "📄 QA test event:"
           cat test-event-qa.json | jq '.' || cat test-event-qa.json
 
+          # Extract bucket and key from test-event-qa.json
+          INPUT_BUCKET=$(jq -r '.input_bucket // empty' test-event-qa.json)
+          INPUT_KEY=$(jq -r '.input_key // empty' test-event-qa.json)
+
+          # Check if test file exists in S3 before invoking
+          if [ -n "$INPUT_BUCKET" ] && [ -n "$INPUT_KEY" ]; then
+            if ! aws s3 ls "s3://$INPUT_BUCKET/$INPUT_KEY" >/dev/null 2>&1; then
+              echo "⚠️  Test file not found in S3: s3://$INPUT_BUCKET/$INPUT_KEY"
+              echo "   Upload a test file to enable smoke testing:"
+              echo "   aws s3 cp your-test-file.ext s3://$INPUT_BUCKET/$INPUT_KEY"
+              exit 0
+            fi
+            echo "✅ Test file found in S3: s3://$INPUT_BUCKET/$INPUT_KEY"
+          fi
+
           # Invoke Lambda with test event
           aws lambda invoke \
-            --function-name veloflow-qa-${{ steps.service.outputs.service_name }} \
+            --function-name ${{ steps.service.outputs.full_service }}-qa-processor \
             --payload file://test-event-qa.json \
             --cli-binary-format raw-in-base64-out \
             response.json
@@ -174,7 +201,7 @@ jobs:
           echo "**Service:** ${{ steps.service.outputs.service_name }}" >> $GITHUB_STEP_SUMMARY
           echo "**Version:** ${{ inputs.artifact_version }}" >> $GITHUB_STEP_SUMMARY
           echo "**Artifact:** service-${{ steps.service.outputs.service_name }}-${{ inputs.artifact_version }}.tar.gz" >> $GITHUB_STEP_SUMMARY
-          echo "**Function:** veloflow-qa-${{ steps.service.outputs.service_name }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Function:** ${{ steps.service.outputs.full_service }}-qa-processor" >> $GITHUB_STEP_SUMMARY
           echo "**QA Tag:** qa-${{ inputs.artifact_version }}" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "**Status:** ${{ job.status }}" >> $GITHUB_STEP_SUMMARY
