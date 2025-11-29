@@ -42,14 +42,14 @@ import boto3
 from service_event_emitter import ServiceEventEmitter
 
 # Initialize S3 client
-s3_client = boto3.client('s3')
+s3_client = boto3.client("s3")
 
 # Lambda tmp directory
-TMP_DIR = Path('/tmp')
+TMP_DIR = Path("/tmp")
 
 # TODO: Update these constants for your service
-SERVICE_ID = os.environ.get('SERVICE_ID', 'your-service-v1')
-SERVICE_VERSION = os.environ.get('SERVICE_VERSION', '1.0.0')
+SERVICE_ID = os.environ.get("SERVICE_ID", "your-service-v1")
+SERVICE_VERSION = os.environ.get("SERVICE_VERSION", "1.0.0")
 
 
 def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
@@ -71,33 +71,33 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         # 1. Validate event format
         print(f"Received event: {json.dumps(event)}")
 
-        if event.get('invocation_type') != 'direct':
+        if event.get("invocation_type") != "direct":
             return {
-                'status': 'error',
-                'error': 'Invalid invocation type. Expected "direct"',
-                'error_type': 'ValidationError'
+                "status": "error",
+                "error": 'Invalid invocation type. Expected "direct"',
+                "error_type": "ValidationError",
             }
 
         # 2. Extract required parameters
         try:
-            job_id = event['job_id']
-            input_bucket = event['input_bucket']
-            input_key = event['input_key']
-            output_bucket = event['output_bucket']
+            job_id = event["job_id"]
+            input_bucket = event["input_bucket"]
+            input_key = event["input_key"]
+            output_bucket = event["output_bucket"]
         except KeyError as e:
             return {
-                'status': 'error',
-                'error': f'Missing required field: {str(e)}',
-                'error_type': 'ValidationError'
+                "status": "error",
+                "error": f"Missing required field: {str(e)}",
+                "error_type": "ValidationError",
             }
 
         # 3. Extract optional parameters
-        reference_date = event.get('reference_date')
-        customer_tier = event.get('customer_tier', 'standard')
-        stage_config = event.get('stage_config', {})
+        reference_date = event.get("reference_date")
+        customer_tier = event.get("customer_tier", "standard")
+        stage_config = event.get("stage_config", {})
 
         # IMPORTANT: Use provided output_key for multi-stage workflow support
-        output_key = event.get('output_key')
+        output_key = event.get("output_key")
         if not output_key:
             # Fallback for legacy single-stage workflows
             # TODO: Update file extension as needed (.xlsx, .json, .pdf, etc.)
@@ -108,13 +108,11 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
 
         # 4. Initialize progress emitter
         emitter = ServiceEventEmitter(
-            job_id=job_id,
-            service_id=SERVICE_ID,
-            stage_id=stage_config.get('stage_id')
+            job_id=job_id, service_id=SERVICE_ID, stage_id=stage_config.get("stage_id")
         )
 
         # 5. Emit starting progress
-        emitter.emit_progress('Starting processing...')
+        emitter.emit_progress("Starting processing...")
 
         print(f"Processing job {job_id}")
         print(f"Input: s3://{input_bucket}/{input_key}")
@@ -122,7 +120,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         print(f"Customer tier: {customer_tier}")
 
         # 6. Download input file from S3
-        emitter.emit_progress('Downloading input file from S3...')
+        emitter.emit_progress("Downloading input file from S3...")
 
         input_filename = Path(input_key).name
         local_input_path = TMP_DIR / f"input_{job_id}_{input_filename}"
@@ -135,7 +133,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
 
         # 7. Process the file
         # TODO: Replace this with your actual processing logic
-        emitter.emit_progress('Processing file...')
+        emitter.emit_progress("Processing file...")
 
         print("Starting file processing...")
         processing_start = time.time()
@@ -146,21 +144,17 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
             input_path=local_input_path,
             output_path=local_output_path,
             config=stage_config,
-            emitter=emitter
+            emitter=emitter,
         )
 
         processing_time_ms = int((time.time() - processing_start) * 1000)
         print(f"Processing completed in {processing_time_ms}ms")
 
         # 8. Upload output file to S3
-        emitter.emit_progress('Uploading output to S3...')
+        emitter.emit_progress("Uploading output to S3...")
 
         print(f"Uploading {local_output_path} to s3://{output_bucket}/{output_key}")
-        s3_client.upload_file(
-            str(local_output_path),
-            output_bucket,
-            output_key
-        )
+        s3_client.upload_file(str(local_output_path), output_bucket, output_key)
 
         output_file_size = local_output_path.stat().st_size
         print(f"Uploaded {output_file_size:,} bytes")
@@ -178,31 +172,31 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
 
         # 11. Build metadata
         metadata = {
-            'processing_time_ms': total_time_ms,
-            'input_file_size_bytes': file_size_bytes,
-            'output_file_size_bytes': output_file_size,
-            'customer_tier': customer_tier,
-            'service_version': SERVICE_VERSION,
+            "processing_time_ms": total_time_ms,
+            "input_file_size_bytes": file_size_bytes,
+            "output_file_size_bytes": output_file_size,
+            "customer_tier": customer_tier,
+            "service_version": SERVICE_VERSION,
             # TODO: Add your custom metadata here
-            **result.get('metadata', {})
+            **result.get("metadata", {}),
         }
 
         if reference_date:
-            metadata['reference_date'] = reference_date
+            metadata["reference_date"] = reference_date
 
         # 12. Emit success event
         emitter.emit_success(
-            'Processing completed successfully',
+            "Processing completed successfully",
             output_key=output_key,
-            metadata=metadata
+            metadata=metadata,
         )
 
         # 13. Return success response
         response = {
-            'status': 'success',
-            'output_bucket': output_bucket,
-            'output_key': output_key,
-            'metadata': metadata
+            "status": "success",
+            "output_bucket": output_bucket,
+            "output_key": output_key,
+            "metadata": metadata,
         }
 
         print(f"Success! Total processing time: {total_time_ms}ms")
@@ -211,32 +205,30 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         return response
 
     except FileNotFoundError as e:
-        error_msg = f'File not found: {str(e)}'
+        error_msg = f"File not found: {str(e)}"
         print(f"ERROR: {error_msg}")
-        if 'emitter' in locals():
-            emitter.emit_error(error_msg, error_type='FileNotFoundError')
+        if "emitter" in locals():
+            emitter.emit_error(error_msg, error_type="FileNotFoundError")
         return {
-            'status': 'error',
-            'error': error_msg,
-            'error_type': 'FileNotFoundError',
-            'metadata': {
-                'job_id': event.get('job_id'),
-                'input_key': event.get('input_key')
-            }
+            "status": "error",
+            "error": error_msg,
+            "error_type": "FileNotFoundError",
+            "metadata": {
+                "job_id": event.get("job_id"),
+                "input_key": event.get("input_key"),
+            },
         }
 
     except ValueError as e:
-        error_msg = f'Invalid value: {str(e)}'
+        error_msg = f"Invalid value: {str(e)}"
         print(f"ERROR: {error_msg}")
-        if 'emitter' in locals():
-            emitter.emit_error(error_msg, error_type='ValueError')
+        if "emitter" in locals():
+            emitter.emit_error(error_msg, error_type="ValueError")
         return {
-            'status': 'error',
-            'error': error_msg,
-            'error_type': 'ValueError',
-            'metadata': {
-                'job_id': event.get('job_id')
-            }
+            "status": "error",
+            "error": error_msg,
+            "error_type": "ValueError",
+            "metadata": {"job_id": event.get("job_id")},
         }
 
     except Exception as e:
@@ -246,18 +238,18 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         print(f"ERROR: {error_msg}")
         print(f"Traceback:\n{error_trace}")
 
-        if 'emitter' in locals():
+        if "emitter" in locals():
             emitter.emit_error(error_msg, error_type=type(e).__name__)
 
         return {
-            'status': 'error',
-            'error': error_msg,
-            'error_type': type(e).__name__,
-            'metadata': {
-                'job_id': event.get('job_id'),
-                'input_key': event.get('input_key'),
-                'processing_time_ms': int((time.time() - start_time) * 1000)
-            }
+            "status": "error",
+            "error": error_msg,
+            "error_type": type(e).__name__,
+            "metadata": {
+                "job_id": event.get("job_id"),
+                "input_key": event.get("input_key"),
+                "processing_time_ms": int((time.time() - start_time) * 1000),
+            },
         }
 
 
@@ -265,7 +257,7 @@ def process_file(
     input_path: Path,
     output_path: Path,
     config: Dict[str, Any],
-    emitter: ServiceEventEmitter
+    emitter: ServiceEventEmitter,
 ) -> Dict[str, Any]:
     """
     TODO: Replace this with your actual file processing logic.
@@ -282,7 +274,7 @@ def process_file(
         Dict containing processing results and metadata
     """
     # Example: Emit progress at key checkpoints
-    emitter.emit_progress('Analyzing input file...')
+    emitter.emit_progress("Analyzing input file...")
 
     # TODO: Implement your processing logic here
     # Example steps:
@@ -293,26 +285,27 @@ def process_file(
 
     # Simulate processing for template
     import time
+
     time.sleep(2)  # Remove this in your implementation
 
     # Create a simple output file (replace with actual output)
-    with open(output_path, 'wb') as f:
-        f.write(b'TODO: Replace with actual output')
+    with open(output_path, "wb") as f:
+        f.write(b"TODO: Replace with actual output")
 
-    emitter.emit_progress('Processing complete')
+    emitter.emit_progress("Processing complete")
 
     # Return metadata about processing
     return {
-        'success': True,
-        'metadata': {
-            'records_processed': 0,  # TODO: Add actual metrics
-            'custom_metric': 'value'
-        }
+        "success": True,
+        "metadata": {
+            "records_processed": 0,  # TODO: Add actual metrics
+            "custom_metric": "value",
+        },
     }
 
 
 # For local testing
-if __name__ == '__main__':
+if __name__ == "__main__":
     # Test event
     test_event = {
         "invocation_type": "direct",
@@ -321,7 +314,7 @@ if __name__ == '__main__':
         "input_key": "test/sample.pdf",
         "output_bucket": "your-test-bucket",
         "customer_tier": "standard",
-        "stage_config": {}
+        "stage_config": {},
     }
 
     # Run handler
