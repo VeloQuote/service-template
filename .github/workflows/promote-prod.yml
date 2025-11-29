@@ -57,8 +57,10 @@ jobs:
       - name: Extract service name
         id: service
         run: |
-          SERVICE_NAME=$(grep "^service:" serverless.yml | awk '{print $2}' | sed 's/veloflow-//')
+          FULL_SERVICE=$(grep "^service:" serverless.yml | awk '{print $2}')
+          SERVICE_NAME=$(echo $FULL_SERVICE | sed 's/veloflow-//')
           echo "service_name=$SERVICE_NAME" >> $GITHUB_OUTPUT
+          echo "full_service=$FULL_SERVICE" >> $GITHUB_OUTPUT
           echo "📋 Service: $SERVICE_NAME"
 
       - name: Get artifact run ID
@@ -131,7 +133,7 @@ jobs:
 
           # Get current function configuration
           CURRENT_VERSION=$(aws lambda get-function \
-            --function-name veloflow-prod-${{ steps.service.outputs.service_name }} \
+            --function-name ${{ steps.service.outputs.full_service }}-prod-processor \
             --query 'Configuration.Version' \
             --output text 2>/dev/null || echo "none")
 
@@ -141,7 +143,7 @@ jobs:
           # Publish version for rollback capability
           if [ "$CURRENT_VERSION" != "none" ]; then
             BACKUP_VERSION=$(aws lambda publish-version \
-              --function-name veloflow-prod-${{ steps.service.outputs.service_name }} \
+              --function-name ${{ steps.service.outputs.full_service }}-prod-processor \
               --description "Backup before deploying ${{ inputs.artifact_version }}" \
               --query 'Version' \
               --output text)
@@ -184,10 +186,27 @@ jobs:
 
           # Update test-event.json to use prod buckets
           jq '.input_bucket = "veloflow-prod-output" | .output_bucket = "veloflow-prod-output"' test-event.json > test-event-prod.json 2>/dev/null || cp test-event.json test-event-prod.json
+          echo "📄 Production test event:"
+          cat test-event-prod.json | jq '.' || cat test-event-prod.json
+
+          # Extract bucket and key from test-event-prod.json
+          INPUT_BUCKET=$(jq -r '.input_bucket // empty' test-event-prod.json)
+          INPUT_KEY=$(jq -r '.input_key // empty' test-event-prod.json)
+
+          # Check if test file exists in S3 before invoking
+          if [ -n "$INPUT_BUCKET" ] && [ -n "$INPUT_KEY" ]; then
+            if ! aws s3 ls "s3://$INPUT_BUCKET/$INPUT_KEY" >/dev/null 2>&1; then
+              echo "⚠️  Test file not found in S3: s3://$INPUT_BUCKET/$INPUT_KEY"
+              echo "   Upload a test file to enable smoke testing:"
+              echo "   aws s3 cp your-test-file.ext s3://$INPUT_BUCKET/$INPUT_KEY"
+              exit 0
+            fi
+            echo "✅ Test file found in S3: s3://$INPUT_BUCKET/$INPUT_KEY"
+          fi
 
           # Invoke Lambda with test event
           aws lambda invoke \
-            --function-name veloflow-prod-${{ steps.service.outputs.service_name }} \
+            --function-name ${{ steps.service.outputs.full_service }}-prod-processor \
             --payload file://test-event-prod.json \
             --cli-binary-format raw-in-base64-out \
             response.json
@@ -241,7 +260,7 @@ jobs:
             **Version:** ${{ inputs.artifact_version }}
             **Environment:** Production
             **Service:** ${{ steps.service.outputs.service_name }}
-            **Function:** veloflow-prod-${{ steps.service.outputs.service_name }}
+            **Function:** ${{ steps.service.outputs.full_service }}-prod-processor
 
             ## Deployment Notes
 
@@ -282,7 +301,7 @@ jobs:
           echo "**Service:** ${{ steps.service.outputs.service_name }}" >> $GITHUB_STEP_SUMMARY
           echo "**Version:** ${{ inputs.artifact_version }}" >> $GITHUB_STEP_SUMMARY
           echo "**Artifact:** service-${{ steps.service.outputs.service_name }}-${{ inputs.artifact_version }}.tar.gz" >> $GITHUB_STEP_SUMMARY
-          echo "**Function:** veloflow-prod-${{ steps.service.outputs.service_name }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Function:** ${{ steps.service.outputs.full_service }}-prod-processor" >> $GITHUB_STEP_SUMMARY
           echo "**Production Tag:** prod-${{ inputs.artifact_version }}" >> $GITHUB_STEP_SUMMARY
           echo "**Backup Version:** ${{ steps.backup.outputs.backup_version }}" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
