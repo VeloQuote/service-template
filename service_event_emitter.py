@@ -29,10 +29,11 @@ Usage:
     )
 """
 
-import os
 import json
+import os
 from datetime import datetime
-from typing import Optional, Dict, Any
+from typing import Any, Dict, Optional
+
 import boto3
 from botocore.exceptions import ClientError
 

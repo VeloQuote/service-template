@@ -36,7 +36,8 @@ import os
 import time
 import traceback
 from pathlib import Path
-from typing import Dict, Any
+from typing import Any, Dict
+
 import boto3
 
 from service_event_emitter import ServiceEventEmitter
