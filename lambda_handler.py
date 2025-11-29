@@ -45,8 +45,8 @@ from service_event_emitter import ServiceEventEmitter
 # Initialize S3 client
 s3_client = boto3.client("s3")
 
-# Lambda tmp directory
-TMP_DIR = Path("/tmp")
+# Lambda tmp directory (hardcoded /tmp is standard for AWS Lambda)
+TMP_DIR = Path("/tmp")  # nosec B108
 
 # TODO: Update these constants for your service
 SERVICE_ID = os.environ.get("SERVICE_ID", "your-service-v1")
