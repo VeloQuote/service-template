@@ -123,16 +123,36 @@ cat response.json
 
 ### 6. Register with VeloFlow
 
+After deployment, register your service with VeloFlow's orchestrator:
+
 ```bash
 # Update veloflow.json with your service details
 vim veloflow.json
 
 # Use VeloFlow's registration script
 cd ~/git/VeloFlow
-python3 scripts/services/register_service.py ~/path/to/my-service --stage dev
+python3 scripts/register_service.py \
+  --service-id "my-service-v1" \
+  --lambda-dev "my-service-dev" \
+  --lambda-qa "my-service-qa" \
+  --lambda-prod "my-service-prod" \
+  --description "My service description"
 ```
 
-The registration script reads your `veloflow.json` metadata file and registers your service in VeloFlow's service registry.
+**Lambda Naming Conventions:**
+
+- **Serverless Framework**: `{service}-{stage}-{functionName}` (auto-generated)
+  - Example: `veloflow-pdf-to-json-dev-processor`
+
+- **Manual deployment**: `service-name-{environment}`
+  - Example: `financial-processor-dev`, `financial-processor-qa`
+
+**Important:** Keep Lambda function names consistent across all environments (dev/qa/prod). Mismatched names will cause cross-environment invocation errors.
+
+**Verify Registration:**
+- Check `src/data/service_registry.json` in VeloFlow repository
+- Ensure Lambda function names match exactly
+- Test with VeloFlow workflow invocation
 
 ---
 
@@ -354,6 +374,27 @@ emitter.emit_error(
 )
 ```
 
+### Service Completion Detection
+
+**How VeloFlow Knows Your Service Finished:**
+
+VeloFlow detects service completion through **S3 bucket notifications**, not EventBridge events:
+
+1. Your service uploads output file to S3 at the specified `output_key`
+2. S3 automatically triggers a notification to VeloFlow's orchestrator
+3. Orchestrator proceeds to the next workflow stage automatically
+
+**What this means:**
+- ✅ Just upload your output file - that's the completion signal
+- ✅ EventBridge events are for real-time UI updates only
+- ✅ No need to explicitly signal completion
+- ❌ Don't wait for acknowledgment - return as soon as file is uploaded
+
+**Troubleshooting stuck workflows:**
+- Verify output file exists at the exact S3 key
+- Check S3 bucket notifications are configured in VeloFlow infrastructure
+- Review VeloFlow orchestrator logs for S3 event processing
+
 ### Output Key Handling (CRITICAL)
 
 **Always use the `output_key` provided in the event:**
@@ -432,7 +473,13 @@ Add custom environment variables in:
 
 ### 4. IAM Permissions
 
-If your service needs additional AWS permissions, update:
+**Default permissions included:**
+- S3 GetObject/PutObject (VeloFlow buckets)
+- EventBridge PutEvents (progress updates)
+- CloudWatch Logs
+- KMS Decrypt (for encrypted environment variables)
+
+**If your service needs additional AWS permissions, add them:**
 
 **Serverless Framework (`serverless.yml`):**
 ```yaml
@@ -453,6 +500,8 @@ Policies:
   - DynamoDBReadPolicy:
       TableName: my-table
 ```
+
+**Important:** KMS decrypt permissions are required if using encrypted environment variables (common for API keys). These are already included in the template configurations.
 
 ### 5. Memory and Timeout
 

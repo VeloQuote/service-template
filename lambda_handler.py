@@ -152,6 +152,9 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         print(f"Processing completed in {processing_time_ms}ms")
 
         # 8. Upload output file to S3
+        # IMPORTANT: This S3 upload triggers VeloFlow's completion detection via S3 bucket notifications.
+        # The orchestrator automatically detects this upload and proceeds to the next workflow stage.
+        # EventBridge events (service.completed) are for real-time UI updates only.
         emitter.emit_progress("Uploading output to S3...")
 
         print(f"Uploading {local_output_path} to s3://{output_bucket}/{output_key}")

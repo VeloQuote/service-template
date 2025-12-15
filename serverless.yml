@@ -65,6 +65,14 @@ provider:
           Resource:
             - arn:aws:logs:${self:provider.region}:*:log-group:/aws/lambda/${self:service}-${self:provider.stage}-*:*
 
+        # KMS permissions for decrypting environment variables
+        # Required if Lambda uses encrypted environment variables
+        - Effect: Allow
+          Action:
+            - kms:Decrypt
+          Resource:
+            - arn:aws:kms:${self:provider.region}:*:key/*
+
   # Deployment configuration
   deploymentBucket:
     name: veloflow-${self:provider.stage}-deployments

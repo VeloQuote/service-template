@@ -31,32 +31,39 @@ Usage:
 
 import json
 import os
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Dict, Optional
 
 import boto3
-from botocore.exceptions import ClientError
 
 
 class ServiceEventEmitter:
     """Emits real-time progress events to VeloFlow EventBridge event bus."""
 
-    def __init__(self, job_id: str, service_id: str, stage_id: Optional[str] = None):
+    def __init__(
+        self,
+        job_id: str,
+        service_id: Optional[str] = None,
+        stage_id: Optional[str] = None,
+        deployment_stage: Optional[str] = None
+    ):
         """
         Initialize the event emitter.
 
         Args:
             job_id: VeloFlow job ID
             service_id: Unique identifier for this service (e.g., 'pdf-to-xls-vision-v1')
+                       Defaults to 'unknown-service' if not provided
             stage_id: Optional workflow stage ID
+            deployment_stage: Deployment stage like 'dev', 'qa', 'prod'
+                            Defaults to STAGE environment variable or 'dev'
         """
         self.job_id = job_id
-        self.service_id = service_id
+        self.service_id = service_id or 'unknown-service'
         self.stage_id = stage_id
-        self.event_bus_name = os.environ.get("EVENT_BUS_NAME")
-
-        # Initialize EventBridge client
-        self.events_client = boto3.client("events")
+        self.deployment_stage = deployment_stage or os.environ.get('STAGE', 'dev')
+        self.events_client = boto3.client('events')
+        self.event_bus_name = os.environ.get('EVENT_BUS_NAME', f'veloflow-{self.deployment_stage}-event-bus')
 
     def emit_progress(
         self, message: str, metadata: Optional[Dict[str, Any]] = None
@@ -68,18 +75,21 @@ class ServiceEventEmitter:
             message: Progress message to display to user
             metadata: Optional additional metadata
         """
-        self._emit_event(
-            event_type="service.progress",
-            detail={
-                "job_id": self.job_id,
-                "service_id": self.service_id,
-                "stage_id": self.stage_id,
-                "status": "in_progress",
-                "message": message,
-                "metadata": metadata,
-                "timestamp": datetime.utcnow().isoformat() + "Z",
-            },
-        )
+        detail = {
+            'job_id': self.job_id,
+            'service_id': self.service_id,
+            'status': 'in_progress',
+            'message': message,
+            'timestamp': datetime.now(timezone.utc).isoformat()
+        }
+
+        if self.stage_id:
+            detail['stage_id'] = self.stage_id
+
+        if metadata:
+            detail['metadata'] = metadata
+
+        self._emit_event('service.progress', detail)
 
     def emit_success(
         self,
@@ -96,19 +106,23 @@ class ServiceEventEmitter:
             metadata: Optional additional metadata
         """
         detail = {
-            "job_id": self.job_id,
-            "service_id": self.service_id,
-            "stage_id": self.stage_id,
-            "status": "success",
-            "message": message,
-            "metadata": metadata,
-            "timestamp": datetime.utcnow().isoformat() + "Z",
+            'job_id': self.job_id,
+            'service_id': self.service_id,
+            'status': 'success',
+            'message': message,
+            'timestamp': datetime.now(timezone.utc).isoformat()
         }
+
+        if self.stage_id:
+            detail['stage_id'] = self.stage_id
 
         if output_key:
             detail["output_key"] = output_key
 
-        self._emit_event(event_type="service.completed", detail=detail)
+        if metadata:
+            detail['metadata'] = metadata
+
+        self._emit_event('service.completed', detail)
 
     def emit_error(
         self,
@@ -125,19 +139,23 @@ class ServiceEventEmitter:
             metadata: Optional additional error context
         """
         detail = {
-            "job_id": self.job_id,
-            "service_id": self.service_id,
-            "stage_id": self.stage_id,
-            "status": "error",
-            "message": message,
-            "metadata": metadata,
-            "timestamp": datetime.utcnow().isoformat() + "Z",
+            'job_id': self.job_id,
+            'service_id': self.service_id,
+            'status': 'error',
+            'message': message,
+            'timestamp': datetime.now(timezone.utc).isoformat()
         }
+
+        if self.stage_id:
+            detail['stage_id'] = self.stage_id
 
         if error_type:
             detail["error_type"] = error_type
 
-        self._emit_event(event_type="service.failed", detail=detail)
+        if metadata:
+            detail['metadata'] = metadata
+
+        self._emit_event('service.failed', detail)
 
     def _emit_event(self, event_type: str, detail: Dict[str, Any]) -> None:
         """
@@ -147,45 +165,21 @@ class ServiceEventEmitter:
             event_type: Event detail type (e.g., 'service.progress')
             detail: Event detail payload
         """
-        # Skip if no event bus configured
-        if not self.event_bus_name:
-            print(
-                f"Warning: EVENT_BUS_NAME not set, skipping event emission: {event_type}"
-            )
-            return
-
         try:
-            # Prepare event entry
-            event_entry = {
-                "Source": "veloflow.service",
-                "DetailType": event_type,
-                "Detail": json.dumps(detail),
-                "EventBusName": self.event_bus_name,
-            }
-
-            # Publish to EventBridge
-            response = self.events_client.put_events(Entries=[event_entry])
-
-            # Check for failures
-            if response.get("FailedEntryCount", 0) > 0:
-                failed = response.get("Entries", [{}])[0]
-                error_code = failed.get("ErrorCode", "Unknown")
-                error_msg = failed.get("ErrorMessage", "Unknown error")
-                print(f"Warning: Failed to emit event: {error_code} - {error_msg}")
-            else:
-                print(f"✓ Emitted event: {event_type} - {detail.get('message', '')}")
-
-        except ClientError as e:
-            # Don't fail the Lambda if event emission fails
-            error_code = e.response.get("Error", {}).get("Code", "Unknown")
-            error_msg = e.response.get("Error", {}).get("Message", str(e))
-            print(
-                f"Warning: Failed to emit event to EventBridge: {error_code} - {error_msg}"
+            self.events_client.put_events(
+                Entries=[
+                    {
+                        'Source': 'veloflow.service',
+                        'DetailType': event_type,
+                        'Detail': json.dumps(detail, default=str),
+                        'EventBusName': self.event_bus_name
+                    }
+                ]
             )
-
+            print(f"✓ Emitted event: {event_type} - {detail.get('message', '')}")
         except Exception as e:
-            # Catch any other exceptions to prevent breaking the service
-            print(f"Warning: Unexpected error emitting event: {str(e)}")
+            # Don't fail the service if event emission fails
+            print(f"Warning: Failed to emit event: {e}")
 
 
 # Example usage

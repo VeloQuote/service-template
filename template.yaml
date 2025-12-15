@@ -63,6 +63,13 @@ Resources:
                 - events:PutEvents
               Resource:
                 - !Sub 'arn:aws:events:${AWS::Region}:${AWS::AccountId}:event-bus/veloflow-${Environment}-event-bus'
+        # KMS permissions for decrypting environment variables
+        - Statement:
+            - Effect: Allow
+              Action:
+                - kms:Decrypt
+              Resource:
+                - !Sub 'arn:aws:kms:${AWS::Region}:${AWS::AccountId}:key/*'
       Layers:
         - !Ref DependenciesLayer
       Tags:
