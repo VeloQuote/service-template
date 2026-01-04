@@ -32,13 +32,15 @@ provider:
     role:
       statements:
         # S3 Read permissions for input files
+        # Wildcard pattern matches both legacy (veloflow-dev-input) and
+        # account-specific buckets (veloflow-068faf2f-dev-input)
         - Effect: Allow
           Action:
             - s3:GetObject
             - s3:GetObjectVersion
           Resource:
-            - arn:aws:s3:::veloflow-${self:provider.stage}-input/*
-            - arn:aws:s3:::veloflow-${self:provider.stage}-processing/*
+            - arn:aws:s3:::veloflow-*-${self:provider.stage}-input/*
+            - arn:aws:s3:::veloflow-*-${self:provider.stage}-processing/*
 
         # S3 Write permissions for output files
         - Effect: Allow
@@ -46,8 +48,8 @@ provider:
             - s3:PutObject
             - s3:PutObjectAcl
           Resource:
-            - arn:aws:s3:::veloflow-${self:provider.stage}-processing/*
-            - arn:aws:s3:::veloflow-${self:provider.stage}-output/*
+            - arn:aws:s3:::veloflow-*-${self:provider.stage}-processing/*
+            - arn:aws:s3:::veloflow-*-${self:provider.stage}-output/*
 
         # EventBridge permissions for progress events
         - Effect: Allow

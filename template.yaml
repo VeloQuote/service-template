@@ -46,18 +46,26 @@ Resources:
           # TODO: Add your service-specific environment variables
           # ANTHROPIC_API_KEY: !Ref AnthropicApiKey
       Policies:
-        # S3 read permissions for input files
-        - S3ReadPolicy:
-            BucketName: !Sub 'veloflow-${Environment}-input'
-        - S3ReadPolicy:
-            BucketName: !Sub 'veloflow-${Environment}-processing'
-        # S3 write permissions for output files
-        - S3WritePolicy:
-            BucketName: !Sub 'veloflow-${Environment}-processing'
-        - S3WritePolicy:
-            BucketName: !Sub 'veloflow-${Environment}-output'
-        # EventBridge permissions for real-time progress updates
+        # S3 permissions - wildcard pattern matches both legacy (veloflow-dev-input) and
+        # account-specific buckets (veloflow-068faf2f-dev-input)
         - Statement:
+            # S3 read permissions for input files
+            - Effect: Allow
+              Action:
+                - s3:GetObject
+                - s3:GetObjectVersion
+              Resource:
+                - !Sub 'arn:aws:s3:::veloflow-*-${Environment}-input/*'
+                - !Sub 'arn:aws:s3:::veloflow-*-${Environment}-processing/*'
+            # S3 write permissions for output files
+            - Effect: Allow
+              Action:
+                - s3:PutObject
+                - s3:PutObjectAcl
+              Resource:
+                - !Sub 'arn:aws:s3:::veloflow-*-${Environment}-processing/*'
+                - !Sub 'arn:aws:s3:::veloflow-*-${Environment}-output/*'
+            # EventBridge permissions for real-time progress updates
             - Effect: Allow
               Action:
                 - events:PutEvents

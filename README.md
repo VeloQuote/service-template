@@ -432,6 +432,16 @@ Add custom environment variables in:
 
 ### 4. IAM Permissions
 
+**Default S3 Permissions:**
+
+The template includes S3 permissions that support both legacy and account-specific bucket naming:
+- Legacy buckets: `veloflow-{stage}-input`, `veloflow-{stage}-output`
+- Account-specific buckets: `veloflow-{account_id}-{stage}-input`, `veloflow-{account_id}-{stage}-output`
+
+The wildcard pattern `veloflow-*-{stage}-input` automatically matches both formats.
+
+**Adding Additional Permissions:**
+
 If your service needs additional AWS permissions, update:
 
 **Serverless Framework (`serverless.yml`):**
